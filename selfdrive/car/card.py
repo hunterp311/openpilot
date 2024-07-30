@@ -52,9 +52,20 @@ class Car:
 
     # set alternative experiences from parameters
     self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
+    self.enable_mads = self.params.get_bool("EnableMads")
+    self.mads_disengage_lateral_on_brake = self.params.get_bool("DisengageLateralOnBrake")
+    self.mads_dlob = self.enable_mads and self.mads_disengage_lateral_on_brake
+    self.mads_ndlob = self.enable_mads and not self.mads_disengage_lateral_on_brake
     self.CP.alternativeExperience = 0
     if not self.disengage_on_accelerator:
       self.CP.alternativeExperience |= ALTERNATIVE_EXPERIENCE.DISABLE_DISENGAGE_ON_GAS
+    if self.mads_dlob:
+      self.CP.alternativeExperience |= ALTERNATIVE_EXPERIENCE.ENABLE_MADS
+    elif self.mads_ndlob:
+      self.CP.alternativeExperience |= ALTERNATIVE_EXPERIENCE.MADS_DISABLE_DISENGAGE_LATERAL_ON_BRAKE
+
+    if self.CP.customStockLongAvailable and self.CP.pcmCruise and self.params.get_bool("CustomStockLong"):
+      self.CP.pcmCruiseSpeed = False
 
     openpilot_enabled_toggle = self.params.get_bool("OpenpilotEnabledToggle")
 
@@ -111,7 +122,10 @@ class Car:
     if (CS.gasPressed and not self.CS_prev.gasPressed and self.disengage_on_accelerator) or \
       (CS.brakePressed and (not self.CS_prev.brakePressed or not CS.standstill)) or \
       (CS.regenBraking and (not self.CS_prev.regenBraking or not CS.standstill)):
-      self.events.add(EventName.pedalPressed)
+      if CS.cruiseState.enabled or not self.enable_mads:
+        self.events.add(EventName.pedalPressed)
+      elif not self.mads_ndlob:
+        self.events.add(EventName.silentPedalPressed)
 
     CS.events = self.events.to_msg()
 
